@@ -1,0 +1,1986 @@
+--[[
+    ╔═══════════════════════════════════════════════════════════════════╗
+    ║                       KUZAN HUB v1.1                              ║
+    ║             Kuzan Hub v1.1 | Get Script All Game                  ║
+    ║             Built with SkidUI Liquid Glass (Obsidian Black)       ║
+    ╚═══════════════════════════════════════════════════════════════════╝
+--]]
+
+--!nocheck
+repeat task.wait() until game:IsLoaded()
+
+local cloneref = cloneref or function(o) return o end
+local Players = cloneref(game:GetService("Players"))
+local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+local TweenService = cloneref(game:GetService("TweenService"))
+local TeleportService = cloneref(game:GetService("TeleportService"))
+local UserInputService = cloneref(game:GetService("UserInputService"))
+local CoreGui = nil
+pcall(function() CoreGui = cloneref(game:GetService("CoreGui")) end)
+local HttpService = cloneref(game:GetService("HttpService"))
+
+--// BẢO VỆ CHỐNG KICK TỰ ĐỘNG (BYPASS BAC / ANTI-CHEAT ERROR 267)
+pcall(function()
+    if hookmetamethod then
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            if not checkcaller() and (method == "Kick" or method == "kick") then
+                warn("[Kuzan Hub v1.1] Đã chặn lệnh Kick từ Anti-Cheat BAC:", ...)
+                return nil
+            end
+            return oldNamecall(self, ...)
+        end))
+    end
+end)
+
+pcall(function()
+    if hookfunction and LocalPlayer and LocalPlayer.Kick then
+        hookfunction(LocalPlayer.Kick, newcclosure(function(self, ...)
+            if not checkcaller() then
+                warn("[Kuzan Hub v1.1] Đã chặn LocalPlayer:Kick từ Anti-Cheat BAC")
+                return nil
+            end
+        end))
+    end
+end)
+
+-- Bảo vệ UI: Ép gethui trỏ về CoreGui để UI không bao giờ bị rơi vào PlayerGui (tránh bị Anti-Cheat BAC phát hiện)
+if not getgenv().gethui then
+    getgenv().gethui = function()
+        local ok, cg = pcall(function() return CoreGui end)
+        if ok and cg then return cg end
+        return nil
+    end
+end
+
+--// 1. DỌN DẸP INSTANCE CŨ AN TOÀN TRƯỚC KHI KHỞI CHẠY (CHỈ DỌN TRONG GETHUI / COREGUI, KHÔNG ĐỤNG PLAYERGUI)
+local function cleanupOldGuis()
+    local containers = {}
+    pcall(function()
+        if gethui then table.insert(containers, gethui()) end
+    end)
+    pcall(function()
+        if CoreGui then table.insert(containers, CoreGui) end
+    end)
+
+    for _, container in ipairs(containers) do
+        for _, name in ipairs({"NullUI", "SkidHubToggleGui", "KuzanToggleGui", "KuzanCommunity_SkidUI"}) do
+            pcall(function()
+                local old = container:FindFirstChild(name)
+                if old then old:Destroy() end
+            end)
+        end
+    end
+end
+cleanupOldGuis()
+
+--// 2. QUẢN LÝ TÀI NGUYÊN HÌNH ẢNH (LOGO GAME & LOGO BẬT TẮT SCRIPT)
+local function getOrDownloadAsset(fileName: string, url: string, fallbackAsset: string)
+    if isfile and isfile(fileName) and getcustomasset then
+        local ok, asset = pcall(function() return getcustomasset(fileName) end)
+        if ok and asset then return asset end
+    end
+
+    if url and url ~= "" and writefile and getcustomasset then
+        local ok, data = pcall(function() return game:HttpGet(url) end)
+        if ok and type(data) == "string" and #data > 500 then
+            pcall(function() writefile(fileName, data) end)
+            local assetOk, asset = pcall(function() return getcustomasset(fileName) end)
+            if assetOk and asset then return asset end
+        end
+    end
+
+    return fallbackAsset or ""
+end
+
+local LOGO_URLS = {
+    BloxFruits = "https://cdn.discordapp.com/attachments/1561610896487354378/1561611124720271420/BloxFruitsLogo.webp?ex=6ad99e31&is=6ad84cb1&hm=998eee71be98e4660f59536d54899de7fbdbb91f15ff915bc73ade8da520db25&",
+    RideAPet = "https://cdn.discordapp.com/attachments/1561610896487354378/1561612305035300924/Site-logo.webp?ex=6ad99f4a&is=6ad84dca&hm=6a2a94d288033b9072e5cfa32c789019c8558f54cfc76aab517c0faa47d5ff95&",
+    StealAnEgg = "https://cdn.discordapp.com/attachments/1561610896487354378/1561611669292064878/Welcome_steal_a_egg.webp?ex=6ad99eb3&is=6ad84d33&hm=4e1a56b154e22abaccddc24e5cceae8c1c1383818536bfd0b0e7f2e99f18bbb9&",
+    FishingMaster = "https://cdn.discordapp.com/attachments/1561610896487354378/1563530983465291826/dff07777-7ea7-4d5b-a756-1f4c9eba1d3f_1.jpg?ex=6ade9ff3&is=6add4e73&hm=dcdf3710d9f8ed4620cd79ab610974ba40a31fa50672d2e4c0699ee78b95837f&",
+    NightInForest = "https://cdn.discordapp.com/attachments/1561610896487354378/1563531024015818875/4da02362-165f-4483-9852-716d58f68710.jpg?ex=6ade9ffd&is=6add4e7d&hm=ee856e131197e43ba612c75bfded5b833cc5e08c0135477ea4e5529eec735b12&",
+    KuzanToggle = "https://cdn.discordapp.com/attachments/1561610896487354378/1561610999612575774/f6e13d55-17ae-4195-85e7-e0c567f78772.png?ex=6ad99e13&is=6ad84c93&hm=064df4a1d0b4b2a890e66f0c27bc5a4dbd8363745237ae22de49405e4d2ae550&"
+}
+
+-- Logo Kuzan Hub chìm cỡ lớn (nhúng trực tiếp Base64 chuẩn nét, không bao giờ hết hạn link)
+local KUZAN_WATERMARK_B64 = [[
+/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAcFBQYFBAcGBQYIBwcIChELCgkJChUPEAwRGBUaGRgVGBcbHichGx0lHRcYIi4iJSgpKywrGiAvMy8qMicqKyr/
+2wBDAQcICAoJChQLCxQqHBgcKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKir/wAARCAHMAcwDASIAAhEBAxEB/8QA
+HwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkK
+FhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXG
+x8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAEC
+AxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOE
+hYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD54ooopgFF
+FFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQ
+AUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFF
+FFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQ
+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
+aalaXWNkoV/7j8H/AOvVmeCG6G25hSXjGWHI/HrXD1bttTu7XAimJX+43IoA2p/DltIT9mlkhbPRhuX/AB/nWdN4ev4v9WiTj/pm3P5HBq1b+JABi5g5/vRn
++h/xrRh1iwmH+vCH0kG39elIDlZrae3P7+GSL/fUioq72OfzUxHIHQ9lbIqN7O0kJMtrA5PcxgH9KYHDUV17aHp0h4tyn+7If65qJvDdiTlWnUezg/0oA5Wi
+unPhqzyNs0/6f4U4eGbLvNP+a/4UActRXWp4d05cZEz/AO8/+Aq7DomlxdLRGPq7Fv5nFAHC9auwaRqFz/qbOUj1K7R+Z4ru4oYLVcxRxwgd1UL+tVbjWbGH
+JlvI2I6gHcf0zQBg2/hK5cj7VPFCO4X5z/h+ta9v4b062YFo2nPYynj8hx/Oqk/iy3TIt4JJT2LHaP61lXPibULhSqOsCn/nmvP5nmgDrpZraxhUSSR28Y+6
+vCj8BWNe+LIEUrZRGVuzvwv5dT+lcq8jyuXkdnY9SxyTTaALl7ql5qB/0mYleyDhR+FU6KKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKA
+CiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAFVmRsoSp9QcVYj1K9i+5dS/QsTVaigDRj16/j/5aq/8AvIKl/wCEjve6
+wn/gJ/xrJooA1x4kvB/yzh/75P8AjQfEl6eiQj6Kf8ayKKANNvEGoH7siJ9EH9agk1a/l+/dy/8AAWx/KqdFAD5JZJTmV2c+rHNMoooAKKKKACiiigAooooA
+KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACii
+igAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA
+KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACii
+igAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA
+KKKKACiiigAooooAKKKKACiiigAooooA/9k=
+]]
+
+local function decodeBase64Bytes(data: string): string
+    local nativeFns = {
+        crypt and crypt.base64decode,
+        crypt and crypt.base64 and crypt.base64.decode,
+        syn and syn.crypt and syn.crypt.base64 and syn.crypt.base64.decode,
+        base64_decode,
+        base64decode
+    }
+    local clean = data:gsub("[^A-Za-z0-9+/=]", "")
+    for _, fn in ipairs(nativeFns) do
+        if type(fn) == "function" then
+            local ok, res = pcall(fn, clean)
+            if ok and type(res) == "string" and #res > 10000 then
+                return res
+            end
+        end
+    end
+
+    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    local lut = {}
+    for i = 1, #chars do
+        lut[string.byte(chars, i)] = i - 1
+    end
+    local out = {}
+    local idx = 1
+    local n = #clean
+    for i = 1, n, 4 do
+        local b1 = lut[string.byte(clean, i)] or 0
+        local b2 = lut[string.byte(clean, i + 1)] or 0
+        local c3 = string.byte(clean, i + 2)
+        local c4 = string.byte(clean, i + 3)
+        local b3 = (c3 and c3 ~= 61) and (lut[c3] or 0) or 0
+        local b4 = (c4 and c4 ~= 61) and (lut[c4] or 0) or 0
+
+        local triple = b1 * 262144 + b2 * 4096 + b3 * 64 + b4
+        local o1 = math.floor(triple / 65536) % 256
+        local o2 = math.floor(triple / 256) % 256
+        local o3 = triple % 256
+
+        if c3 == 61 then
+            out[idx] = string.char(o1)
+        elseif c4 == 61 then
+            out[idx] = string.char(o1, o2)
+        else
+            out[idx] = string.char(o1, o2, o3)
+        end
+        idx = idx + 1
+    end
+    return table.concat(out)
+end
+
+local function getEmbeddedWatermarkAsset(fallbackAsset: string): string
+    local customAssetFn = getcustomasset or getsynasset
+    local wmFile = "kuzan_watermark_v11.jpg"
+    if customAssetFn and isfile and isfile(wmFile) then
+        local validCache = true
+        if readfile then
+            local okR, raw = pcall(readfile, wmFile)
+            validCache = (okR and type(raw) == "string" and #raw > 15000)
+        end
+        if validCache then
+            local okA, asset = pcall(customAssetFn, wmFile)
+            if okA and type(asset) == "string" and #asset > 0 then
+                return asset
+            end
+        end
+    end
+
+    if customAssetFn and writefile then
+        local okDec, imgBytes = pcall(decodeBase64Bytes, KUZAN_WATERMARK_B64)
+        if okDec and type(imgBytes) == "string" and #imgBytes > 15000 then
+            pcall(writefile, wmFile, imgBytes)
+            local okA, asset = pcall(customAssetFn, wmFile)
+            if okA and type(asset) == "string" and #asset > 0 then
+                return asset
+            end
+        end
+    end
+
+    return fallbackAsset or ""
+end
+
+local embeddedWatermark = getEmbeddedWatermarkAsset("")
+
+local ASSETS = {
+    BloxFruits = getOrDownloadAsset("bloxfruits_logo.webp", LOGO_URLS.BloxFruits, "rbxassetid://7733960981"),
+    RideAPet = getOrDownloadAsset("rideapet_logo.webp", LOGO_URLS.RideAPet, "rbxassetid://7733964719"),
+    StealAnEgg = getOrDownloadAsset("stealanegg_logo.webp", LOGO_URLS.StealAnEgg, "rbxassetid://124947058155926"),
+    FishingMaster = getOrDownloadAsset("fishingmaster_logo.jpg", LOGO_URLS.FishingMaster, "rbxassetid://7733964719"),
+    NightInForest = getOrDownloadAsset("nightinforest_logo.jpg", LOGO_URLS.NightInForest, "rbxassetid://7733964719"),
+    KuzanToggle = getOrDownloadAsset("kuzan_toggle.png", LOGO_URLS.KuzanToggle, embeddedWatermark ~= "" and embeddedWatermark or "rbxassetid://4483345998"),
+    KuzanWatermark = embeddedWatermark ~= "" and embeddedWatermark or getOrDownloadAsset("kuzan_toggle.png", LOGO_URLS.KuzanToggle, "rbxassetid://4483345998"),
+    Settings = "rbxassetid://4483345998"
+}
+
+-- Cài đặt Logo Kuzan Hub làm logo mặc định cho SkidUI trước khi nạp thư viện
+getgenv().SkidHubLogoAsset = ASSETS.KuzanToggle
+
+--// 3. TẢI & TUỲ BIẾN THƯ VIỆN SKIDUI SANG TÔNG ĐEN CHỦ ĐẠO + CỬA SỔ LỚN HƠN
+local SkidUI = nil
+
+local function patchSkidUIForBlackTheme(src: string): string
+    if type(src) ~= "string" then return src end
+    pcall(function()
+        -- Đổi kích thước cửa sổ mặc định lớn hơn (từ 685x460 lên 780x525, hỗ trợ options.Size)
+        src = src:gsub("Size%s*=%s*UDim2%.fromOffset%(685,%s*460%)", "Size = options.Size or UDim2.fromOffset(780, 525)")
+
+        -- Đổi các viền tím và lớp khúc xạ trong SkidUI sang tông Đen / Xám khói sang trọng
+        src = src:gsub("prism%.BackgroundColor3%s*=%s*Color3%.fromRGB%(168,%s*85,%s*247%)", "prism.BackgroundColor3 = Color3.fromRGB(16, 16, 20)")
+        src = src:gsub("Stroke%(main,%s*Color3%.fromRGB%(168,%s*85,%s*247%),%s*1%.5,%s*0%.2%)", "Stroke(main, Color3.fromRGB(68, 68, 78), 1.5, 0.25)")
+        src = src:gsub("Stroke%(toolbar,%s*Color3%.fromRGB%(168,%s*85,%s*247%),%s*1,%s*0%.35%)", "Stroke(toolbar, Color3.fromRGB(60, 60, 70), 1, 0.3)")
+        src = src:gsub("Stroke%(tabBar,%s*Color3%.fromRGB%(168,%s*85,%s*247%),%s*1,%s*0%.45%)", "Stroke(tabBar, Color3.fromRGB(54, 54, 64), 1, 0.35)")
+        src = src:gsub("Stroke%(contentSurface,%s*Color3%.fromRGB%(168,%s*85,%s*247%),%s*1,%s*0%.5%)", "Stroke(contentSurface, Color3.fromRGB(54, 54, 64), 1, 0.35)")
+        src = src:gsub("Color3%.fromRGB%(75,%s*52,%s*105%)", "Color3.fromRGB(50, 50, 60)")
+
+        -- Toggles & Sliders sang tông Đen - Trắng Bạc hiện đại
+        src = src:gsub("state and Color3%.fromRGB%(168,%s*85,%s*247%) or Color3%.fromRGB%(42,%s*32,%s*58%)", "state and Color3.fromRGB(230, 230, 238) or Color3.fromRGB(28, 28, 34)")
+        src = src:gsub("state and Color3%.fromRGB%(255,%s*255,%s*255%) or Color3%.fromRGB%(180,%s*170,%s*195%)", "state and Color3.fromRGB(12, 12, 15) or Color3.fromRGB(175, 175, 185)")
+        src = src:gsub("Color3%.fromRGB%(168,%s*85,%s*247%)", "Color3.fromRGB(120, 120, 138)")
+
+        -- Toàn bộ các mã nền tím tối đổi sang Đen tuyền (Obsidian Black)
+        src = src:gsub("Color3%.fromRGB%(18,%s*14,%s*28%)", "Color3.fromRGB(8, 8, 10)")
+        src = src:gsub("Color3%.fromRGB%(26,%s*20,%s*38%)", "Color3.fromRGB(15, 15, 19)")
+        src = src:gsub("Color3%.fromRGB%(24,%s*18,%s*36%)", "Color3.fromRGB(10, 10, 12)")
+        src = src:gsub("Color3%.fromRGB%(28,%s*20,%s*42%)", "Color3.fromRGB(13, 13, 16)")
+        src = src:gsub("Color3%.fromRGB%(22,%s*16,%s*32%)", "Color3.fromRGB(11, 11, 14)")
+        src = src:gsub("Color3%.fromRGB%(20,%s*15,%s*30%)", "Color3.fromRGB(10, 10, 13)")
+        src = src:gsub("Color3%.fromRGB%(22,%s*16,%s*34%)", "Color3.fromRGB(12, 12, 15)")
+        src = src:gsub("Color3%.fromRGB%(36,%s*26,%s*52%)", "Color3.fromRGB(18, 18, 22)")
+        src = src:gsub("Color3%.fromRGB%(30,%s*22,%s*45%)", "Color3.fromRGB(15, 15, 19)")
+        src = src:gsub("Color3%.fromRGB%(18,%s*13,%s*26%)", "Color3.fromRGB(9, 9, 11)")
+        src = src:gsub("Color3%.fromRGB%(18,%s*13,%s*28%)", "Color3.fromRGB(9, 9, 11)")
+        src = src:gsub("Color3%.fromRGB%(32,%s*24,%s*46%)", "Color3.fromRGB(16, 16, 20)")
+        src = src:gsub("Color3%.fromRGB%(24,%s*18,%s*35%)", "Color3.fromRGB(13, 13, 16)")
+        src = src:gsub("Color3%.fromRGB%(42,%s*32,%s*58%)", "Color3.fromRGB(26, 26, 32)")
+        src = src:gsub("Color3%.fromRGB%(38,%s*28,%s*54%)", "Color3.fromRGB(24, 24, 30)")
+        src = src:gsub("Color3%.fromRGB%(185,%s*170,%s*210%)", "Color3.fromRGB(175, 175, 185)")
+
+        -- Giữ nền đen đặc khi mở cửa sổ (không bị mờ về 0.34) và mở rộng tỷ lệ trên Mobile
+        src = src:gsub(
+            "local NullUI = loadstring%(uiRaw%)%(%)",
+            'uiRaw = uiRaw:gsub("BackgroundTransparency = 0%%.34", "BackgroundTransparency = 0.02")\n'
+            .. 'uiRaw = uiRaw:gsub("%%* 0%%.64", "* 0.76")\n'
+            .. "local NullUI = loadstring(uiRaw)()"
+        )
+    end)
+    return src
+end
+
+pcall(function()
+    if isfile and isfile("skiuidep.lua") then
+        SkidUI = loadstring(patchSkidUIForBlackTheme(readfile("skiuidep.lua")))()
+    elseif isfile and isfile("skidui.lua") then
+        SkidUI = loadstring(patchSkidUIForBlackTheme(readfile("skidui.lua")))()
+    end
+end)
+
+if not SkidUI then
+    local urls = {
+        "https://raw.githubusercontent.com/ninhcac/luaskid/refs/heads/main/skidui.lua",
+        "https://raw.githubusercontent.com/ninhcac/luaskid/main/skidui.lua"
+    }
+    for _, url in ipairs(urls) do
+        local ok, content = pcall(function() return game:HttpGet(url) end)
+        if ok and type(content) == "string" and #content > 1000 then
+            local parseOk, lib = pcall(function() return loadstring(patchSkidUIForBlackTheme(content))() end)
+            if parseOk and lib then
+                SkidUI = lib
+                pcall(function()
+                    if writefile then writefile("skiuidep.lua", content) end
+                end)
+                break
+            end
+        end
+    end
+end
+
+if not SkidUI then
+    warn("[Kuzan Hub v1.1] Không thể tải thư viện SkidUI (skiuidep.lua)! Vui lòng kiểm tra lại kết nối mạng.")
+    return
+end
+
+--// 4. HÀM THÔNG BÁO VÀ THỰC THI SCRIPT AN TOÀN
+local function notify(title: string, desc: string, duration: number?)
+    duration = duration or 3
+    if SkidUI.Notify then
+        pcall(function()
+            SkidUI.Notify({
+                Title = title,
+                Text = desc,
+                Duration = duration,
+                Type = "info"
+            })
+        end)
+    elseif SkidUI.CreateNoti then
+        pcall(function()
+            SkidUI.CreateNoti(title, desc, duration)
+        end)
+    end
+end
+
+-- Link Server Discord chính thức
+local DISCORD_INVITE = "https://discord.com/invite/bcEhyGPgay"
+
+local function copyDiscord(showNoti)
+    local copyFn = setclipboard or toclipboard or (Clipboard and Clipboard.set)
+    if copyFn then
+        pcall(function() copyFn(DISCORD_INVITE) end)
+        if showNoti then
+            notify("Discord", "Đã sao chép link Server Discord vào bộ nhớ tạm!", 3)
+        end
+    end
+end
+
+-- Tự động sao chép link Discord vào bộ nhớ tạm khi vừa nạp script
+task.spawn(function()
+    task.wait(0.5)
+    copyDiscord(false)
+end)
+
+local rawWin = nil
+local mainGui = nil
+local autoCloseUI = true
+
+local function hideKuzanHub()
+    pcall(function()
+        if rawWin and rawWin.Close and rawWin._state == "open" then
+            rawWin:Close()
+        elseif rawWin and rawWin.Toggle then
+            rawWin:Toggle()
+        elseif mainGui then
+            mainGui.Visible = false
+        end
+    end)
+end
+
+local function executeScript(code: string, scriptName: string)
+    local loader = loadstring or (load_string and load_string)
+    if not loader then
+        notify("Lỗi", "Executor không hỗ trợ loadstring!", 3.5)
+        return
+    end
+
+    if autoCloseUI then
+        hideKuzanHub()
+    end
+
+    notify("Đang chạy", "Đang khởi chạy " .. scriptName .. "... (Chạm Logo hoặc nhấn Ctrl để mở lại)", 3.5)
+    task.spawn(function()
+        local success, err = pcall(function()
+            local fn = loader(code)
+            if fn then fn() end
+        end)
+        if success then
+            notify("Thành công", scriptName .. " đã bật thành công!", 3)
+        else
+            notify("Lỗi", tostring(err):sub(1, 55) .. "...", 4)
+        end
+    end)
+end
+
+--// 5. DANH SÁCH TOÀN BỘ SCRIPT (DATABASE CHUẨN XÁC THEO YÊU CẦU)
+local Database = {
+    ["Blox Fruits"] = {
+        ["Script Main"] = {
+            {
+                Name = "Skid Hub ( HOT )",
+                Code = 'loadstring(game:HttpGet("https://vxezestudio.online/api/scripts/script_NLtAxTb4rXVty/stream/init"))()'
+            },
+            {
+                Name = "Speed Hub ( HOT )",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua", true))()'
+            },
+            {
+                Name = "Realkid Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/realkidhub/realkid/refs/heads/main/main.lua"))()'
+            },
+            {
+                Name = "Cokka Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/UserDevEthical/Loadstring/main/CokkaHub.lua"))()'
+            },
+            {
+                Name = "BlueX Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Dev-BlueX/BlueX-Hub/refs/heads/main/Main.lua"))()'
+            },
+            {
+                Name = "Quantum Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/flazhy/QuantumOnyx/refs/heads/main/QuantumOnyx.lua"))()'
+            },
+            {
+                Name = "Vxeze Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Dex-Bear/VxezeHubLoader/refs/heads/main/MainHub.lua"))()'
+            },
+            {
+                Name = "OMG Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Omgshit/Scripts/main/MainLoader.lua"))()'
+            },
+            {
+                Name = "Bacon Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Dev-BaconHub/hack/refs/heads/main/BaconHub.lua"))()'
+            },
+            {
+                Name = "HoHo Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/acsu123/HOHO_H/main/Loading_UI"))()'
+            }
+        },
+        ["Script Auto"] = {
+            {
+                Name = "Skid Hub | Auto Find Fruits",
+                Code = 'loadstring(game:HttpGet("https://vxezestudio.online/api/scripts/script_5k4Kqj6K16xn6/stream/init"))()'
+            },
+            {
+                Name = "Night Hub | Hop Boss",
+                Code = 'getgenv().OldHop = true getgenv().Team = "Marines" loadstring(game:HttpGet("https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/HopScript.luau"))()'
+            },
+            {
+                Name = "Night Hub | Pull Level",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/6V3PullLever.luau"))()'
+            },
+            {
+                Name = "Night Hub | Find Fruits",
+                Code = 'getgenv().KaitunFruit = { Team = "Marines", BlacklistFruits = {}, Webhook = { Enabled = false, Url = "" }, UsingHopApi = true } loadstring(game:HttpGet("https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/KaitunFindFruit.luau"))()'
+            },
+            {
+                Name = "Night Hub | Get Race Cyborg or Ghoul",
+                Code = 'repeat wait() until game:IsLoaded() getgenv().Race = "Cyborg" loadstring(game:HttpGet("https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/KaitunGhoulCyborg.luau"))()'
+            },
+            {
+                Name = "Trash hub Auto Bouty ( God,Potral,Buddy )",
+                Code = [=[getgenv().Config = {
+    WebhookURL = "",
+    SelectTeam = "Pirates",
+    Mode = "Skill",
+    LowHp = 4000,
+    UsePortalC = true,
+    BoostFPS = true,
+    AutoV3 = true,
+    AutoV4 = true,
+    UseM1 = true,
+    UseM1Gun = true,
+    Region = "Singapore",
+    SkipRace = {"Fishman", "Draco"},
+    IgnoredFruits = {
+        ["Portal"] = false,
+        ["Kitsune"] = false,
+        ["Dragon"] = false,
+        ["Tiger"] = false,
+        ["T-Rex"] = false,
+        ["Mammoth"] = false,
+        ["Yeti"] = false,
+        ["Buddha"] = false,
+        ["Control"] = false,
+        ["Dough"] = false,
+        ["Pain"] = false,
+        ["Gas"] = false,
+    },
+    Skills = {
+        ["Fruit"] = {
+            ["Enable"] = true,
+            ["Z"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 2},
+            ["X"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 1},
+            ["C"] = {["Enable"] = false, ["HoldTime"] = 0.06, ["Priority"] = 10},
+            ["V"] = {["Enable"] = false, ["HoldTime"] = 0.06, ["Priority"] = 11},
+            ["F"] = {["Enable"] = false, ["HoldTime"] = 0.06, ["Priority"] = 12},
+        },
+        ["Sword"] = {
+            ["Enable"] = true,
+            ["Z"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 3},
+            ["X"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 9},
+        },
+        ["Melee"] = {
+            ["Enable"] = true,
+            ["Z"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 4},
+            ["X"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 8},
+            ["C"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 5},
+        },
+        ["Gun"] = {
+            ["Enable"] = true,
+            ["Z"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 7},
+            ["X"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 6},
+        },
+    }
+}
+loadstring(game:HttpGet("https://raw.githubusercontent.com/tigerhubdev/Scripts/refs/heads/main/BF-AutoBounty"))()]=]
+            },
+            {
+                Name = "Trash hub Auto Bouty ( Sangui-PORTAL-CDK)",
+                Code = [=[getgenv().Config = {
+    WebhookURL = "",
+    SelectTeam = "Pirates",
+    Mode = "Skill",
+    LowHp = 4000,
+    UsePortalC = true,
+    BoostFPS = true,
+    AutoV3 = true,
+    AutoV4 = true,
+    UseM1 = true,
+    UseM1Gun = true,
+    Region = "Singapore",
+    SkipRace = {"Fishman", "Draco"},
+    IgnoredFruits = {
+        ["Portal"] = false,
+        ["Kitsune"] = false,
+        ["Dragon"] = false,
+        ["Tiger"] = false,
+        ["T-Rex"] = false,
+        ["Mammoth"] = false,
+        ["Yeti"] = false,
+        ["Buddha"] = false,
+        ["Control"] = false,
+        ["Dough"] = false,
+        ["Pain"] = false,
+        ["Gas"] = false,
+    },
+    Skills = {
+        ["Fruit"] = {
+            ["Enable"] = true,
+            ["Z"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 2},
+            ["X"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 1},
+            ["C"] = {["Enable"] = false, ["HoldTime"] = 0.06, ["Priority"] = 0},
+            ["V"] = {["Enable"] = false, ["HoldTime"] = 0.06, ["Priority"] = 0},
+            ["F"] = {["Enable"] = false, ["HoldTime"] = 0.06, ["Priority"] = 0},
+        },
+        ["Sword"] = {
+            ["Enable"] = true,
+            ["Z"] = {["Enable"] = true,  ["HoldTime"] = 0.5, ["Priority"] = 3},
+            ["X"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 9},
+        },
+        ["Melee"] = {
+            ["Enable"] = true,
+            ["Z"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 4},
+            ["X"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 7},
+            ["C"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 8},
+        },
+        ["Gun"] = {
+            ["Enable"] = true,
+            ["Z"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 5},
+            ["X"] = {["Enable"] = true,  ["HoldTime"] = 0.06, ["Priority"] = 6},
+        },
+    }
+}
+loadstring(game:HttpGet("https://raw.githubusercontent.com/tigerhubdev/Scripts/refs/heads/main/BF-AutoBounty"))()]=]
+            }
+        },
+        ["Script Kaitun"] = {
+            {
+                Name = "Read Kid Kaitun lv",
+                Code = 'getgenv().Configs = { ["Quest"] = { ["Evo Race V1"] = true, ["Evo Race V2"] = true, ["RGB Haki"] = true, ["Pull Lerver"] = true }, Sword = { "Dual-Headed Blade", "Smoke Admiral", "Wardens Sword", "Cutlass", "Katana", "Dual Katana", "Triple Katana", "Iron Mace", "Saber", "Pole (1st Form)", "Gravity Blade", "Longsword", "Rengoku", "Midnight Blade", "Soul Cane", "Bisento", "Yama", "Tushita", "Cursed Dual Katana" }, Gun = { "Skull Guitar", "Kabucha", "Venom Bow", "Musket", "Flintlock", "Refined Slingshot", "Magma Blaster", "Dual Flintlock", "Cannon", "Bizarre Revolver", "Bazooka" }, ["Bypass TP"] = true, ["Auto Active Race V4"] = true } loadstring(game:HttpGet("https://raw.githubusercontent.com/realkidhub/realkid/refs/heads/main/kaitun.lua"))()'
+            },
+            {
+                Name = "Lotus Kaitun 39 Quest",
+                Code = 'repeat task.wait() until game:IsLoaded() and game.Players.LocalPlayer getgenv().Key = "VIP-7943-C73D-4D3C" getgenv().Auto39QuestsConfig = getgenv().Auto39QuestsConfig or { ["Enabled"] = true, ["Auto Secret Quest"] = true, ["Hidden Hop Dead Hour"] = true, ["Bring Mob"] = true, ["Select Weapon"] = "Melee", ["AutoEquipWeapon"] = "Melee", ["Attack No Animation "] = true, ["Speed Tween"] = 210, ["FastAttack"] = true, ["SafeDistanceY"] = 25, ["AutoBusohaki"] = true } if not game:IsLoaded() then game.Loaded:Wait() end local lp = game:GetService("Players").LocalPlayer if not lp then game:GetService("Players").PlayerAdded:Wait() lp = game:GetService("Players").LocalPlayer end if not lp.Character then task.spawn(function() while not lp.Character do pcall(function() game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("SetTeam", "Pirates") end) task.wait(1) end end) lp.CharacterAdded:Wait() end loadstring(game:HttpGet("https://raw.githubusercontent.com/hihiae/36var/refs/heads/main/lonmemayluon.lua"))()'
+            },
+            {
+                Name = "Trash Hub Kaitun Hallowen Event",
+                Code = 'getgenv().Config = { Team = "Marines", ["Auto Melee"] = true, ["Auto Random"] = true, ["Auto Store"] = true, ["Hide Notifications"] = true, ["FPS Boost"] = true, ["Hop Near Player"] = true } loadstring(game:HttpGet("https://raw.githubusercontent.com/scriptbloxfruit/Trash-Hub/refs/heads/main/KaitunHalloween"))()'
+            }
+        }
+    },
+
+    ["Steal An Egg"] = {
+        ["Script Main"] = {
+            {
+                Name = "Skid Hub",
+                Code = 'loadstring(game:HttpGet("https://vxezestudio.online/api/scripts/script_JS69qlzJxDea4/stream/init"))()'
+            },
+            {
+                Name = "Night Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau"))()'
+            },
+            {
+                Name = "Vexeze Hub",
+                Code = 'loadstring(game:HttpGet("https://gist.githubusercontent.com/angeryy-tvy/6a9ce750ddf5860230196ac468868fdb/raw/Steal-An-Egg-Vxeze"))()'
+            },
+            {
+                Name = "Chilli Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/kadit9999/stealanegg/refs/heads/main/ChilliV5BaKhi.lua"))()'
+            },
+            {
+                Name = "Big Froot",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/hanniii1/Loader/refs/heads/main/BFLoader.lua"))()'
+            },
+            {
+                Name = "Solix Hub",
+                Code = 'loadstring(game:HttpGet("https://solixhub.com/loader"))()'
+            },
+            {
+                Name = "Tsuo Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Tsuo7/TsuoHub/main/stealanegg"))()'
+            },
+            {
+                Name = "Hoshi Hub",
+                Code = 'loadstring(game:HttpGet("https://hoshihub.site/loader.lua"))()'
+            }
+        },
+        ["Script Auto"] = {
+            {
+                Name = "Skid Hub | Auto Steal",
+                Code = 'loadstring(game:HttpGet("https://vxezestudio.online/api/scripts/script_sDftUm3KW0KTE/stream/init"))()'
+            }
+        },
+        ["Script Kaitun"] = {}
+    },
+
+    ["Ride A Pet"] = {
+        ["Script Main"] = {
+            {
+                Name = "Chilli Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tienkhanh1/spicy/main/Chilli.lua"))()'
+            },
+            {
+                Name = "Serenity Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/MUshihara/Serenity-hub/main/loader.lua"))()'
+            },
+            {
+                Name = "Mystrix Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/ummarxfarooq/mystrix-hub/refs/heads/main/loader"))()'
+            },
+            {
+                Name = "Nemo Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/NemoScripts/NemoHubGames/refs/heads/main/besthub"))()'
+            },
+            {
+                Name = "Vexeze Hub",
+                Code = 'loadstring(game:HttpGet("https://gist.githubusercontent.com/angeryy-tvy/aa41355147686489cb88748b35ffc54f/raw/RideAPet-Vxeze.lua"))()'
+            },
+            {
+                Name = "Big Froot",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/hanniii1/Loader/refs/heads/main/BFLoader.lua"))()'
+            },
+            {
+                Name = "Chronix Hub",
+                Code = 'loadstring(game:HttpGet("https://chronix-gate.net/l"))()'
+            }
+        },
+        ["Script Auto"] = {},
+        ["Script Kaitun"] = {}
+    },
+
+    ["Fishing Master"] = {
+        ["Script Main"] = {
+            {
+                Name = "Ouroboros Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/joustingmatch/Ouroboros/main/loader.lua"))()'
+            },
+            {
+                Name = "Cream Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/creamsx/universalscript/refs/heads/main/script.lua"))()'
+            },
+            {
+                Name = "Auto Fish Hub",
+                Code = 'loadstring(game:HttpGet("https://pastebin.ai/raw/1kLd8pCGT"))()'
+            },
+            {
+                Name = "NNVN Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/n0namevnnek-web/Fishing-Master/refs/heads/main/Key.lua"))()'
+            }
+        },
+        ["Script Auto"] = {},
+        ["Script Kaitun"] = {}
+    },
+
+    ["99 Night in The Forest"] = {
+        ["Script Main"] = {
+            {
+                Name = "Speed Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua", true))()'
+            },
+            {
+                Name = "Than Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/thantzy/thanhub/refs/heads/main/thanv1"))()'
+            },
+            {
+                Name = "Infinite Diamond",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/MQPS7/99-Night-in-the-Forset/refs/heads/main/Gfarm"))()'
+            },
+            {
+                Name = "Alchemy Hub",
+                Code = 'loadstring(game:HttpGet("https://scripts.alchemyhub.xyz"))()'
+            },
+            {
+                Name = "Hoho Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/acsu123/HOHO_H/main/Loading_UI"))()'
+            },
+            {
+                Name = "Foxname Hub",
+                Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Kenniel123/99-Nights-in-the-Forest/main/99%20Nights%20in%20the%20Forest"))()'
+            }
+        },
+        ["Script Auto"] = {},
+        ["Script Kaitun"] = {}
+    }
+}
+
+--// 6. TẠO CỬA SỔ GIAO DIỆN CHÍNH (KUZAN HUB v1.1 - TÔNG ĐEN CHỦ ĐẠO & KÍCH THƯỚC LỚN HƠN)
+local targetWinSize = UDim2.fromOffset(780, 525)
+pcall(function()
+    local cam = workspace.CurrentCamera
+    if cam and cam.ViewportSize.X > 0 and cam.ViewportSize.Y > 0 then
+        local vp = cam.ViewportSize
+        local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+        if not isMobile then
+            local w = math.clamp(780, 560, math.max(560, math.floor(vp.X - 36)))
+            local h = math.clamp(525, 390, math.max(390, math.floor(vp.Y - 36)))
+            targetWinSize = UDim2.fromOffset(w, h)
+        end
+    end
+end)
+
+local Win = SkidUI.CreateMain({
+    Title = "Kuzan Hub v1.1",
+    Subtitle = "Universal Script Hub • v1.1",
+    Desc = "Kuzan Hub v1.1 | Get Script All Game",
+    Size = targetWinSize
+})
+
+rawWin = Win._window
+mainGui = rawWin and rawWin._gui
+
+-- Tuỳ biến Cửa sổ lớn hơn, Tông màu Đen chủ đạo (Obsidian Black) & Topbar Kuzan Hub v1.1
+pcall(function()
+    if SkidUI.NullUI and SkidUI.NullUI.Theme then
+        SkidUI.NullUI.Theme.Background = Color3.fromRGB(8, 8, 10)
+        SkidUI.NullUI.Theme.Surface = Color3.fromRGB(15, 15, 19)
+        SkidUI.NullUI.Theme.Text = Color3.fromRGB(255, 255, 255)
+        SkidUI.NullUI.Theme.TextDim = Color3.fromRGB(175, 175, 185)
+        SkidUI.NullUI.Theme.Accent = Color3.fromRGB(225, 225, 235)
+    end
+
+    if mainGui then
+        -- Mở rộng kích thước cửa sổ khi bật & căn giữa cân đối
+        local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+        if not isMobile then
+            rawWin._normalSize = targetWinSize
+            rawWin._sizeBeforeMinimize = targetWinSize
+            mainGui.Size = targetWinSize
+            mainGui.Position = UDim2.fromScale(0.5, 0.5)
+        else
+            rawWin._normalSize = mainGui.Size
+            rawWin._sizeBeforeMinimize = mainGui.Size
+        end
+        if rawWin._drag and rawWin._drag.Sync then
+            pcall(function() rawWin._drag.Sync() end)
+        end
+
+        -- Tông màu Đen tuyền chủ đạo (Obsidian Black) & khóa độ đục không bị mờ đi
+        mainGui.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+        mainGui.BackgroundTransparency = 0.02
+        TweenService:Create(mainGui, TweenInfo.new(0.05), {
+            BackgroundColor3 = Color3.fromRGB(8, 8, 10),
+            BackgroundTransparency = 0.02
+        }):Play()
+
+        if rawWin and rawWin.Open then
+            local origOpen = rawWin.Open
+            rawWin.Open = function(self, ...)
+                local res = origOpen(self, ...)
+                task.defer(function()
+                    if self._gui and self._gui.Parent then
+                        local sz = self._sizeBeforeMinimize or self._normalSize
+                        TweenService:Create(self._gui, TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                            Size = sz,
+                            BackgroundTransparency = 0.02
+                        }):Play()
+                    end
+                end)
+                return res
+            end
+        end
+
+        local mainStroke = mainGui:FindFirstChildWhichIsA("UIStroke")
+        if mainStroke then
+            mainStroke.Color = Color3.fromRGB(68, 68, 78)
+            mainStroke.Transparency = 0.25
+        end
+
+        -- Bo tròn các góc trên của cửa sổ chính
+        local mainCorner = mainGui:FindFirstChildWhichIsA("UICorner")
+        if mainCorner then
+            mainCorner.CornerRadius = UDim.new(0, 28)
+        end
+
+        -- Xử lý lớp kính Glass (loại bỏ lớp sương trắng SpecularHighlight & ánh tím RefractionPrism)
+        local glass = mainGui:FindFirstChild("Glass") or mainGui:FindFirstChild("GlassLayer")
+        if glass then
+            glass.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+            glass.BackgroundTransparency = 0.04
+            local glassCorner = glass:FindFirstChildWhichIsA("UICorner")
+            if glassCorner then
+                glassCorner.CornerRadius = UDim.new(0, 28)
+            end
+            local sheen = glass:FindFirstChild("SpecularHighlight")
+            if sheen then
+                sheen.BackgroundTransparency = 0.97
+            end
+            local refraction = glass:FindFirstChild("RefractionPrism")
+            if refraction then
+                refraction.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+                refraction.BackgroundTransparency = 0.97
+            end
+        end
+
+        local prism = mainGui:FindFirstChild("PrismLayer")
+        if prism then
+            prism.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+            prism.BackgroundTransparency = 0.97
+            local prismCorner = prism:FindFirstChildWhichIsA("UICorner")
+            if prismCorner then
+                prismCorner.CornerRadius = UDim.new(0, 28)
+            end
+        end
+
+        local topbar = mainGui:FindFirstChild("TopBar")
+        if topbar then
+            topbar.BackgroundTransparency = 1 -- Giữ trong suốt để không che hoặc làm vuông các góc cong ở trên
+            local topbarCorner = topbar:FindFirstChildWhichIsA("UICorner")
+            if not topbarCorner then
+                topbarCorner = Instance.new("UICorner")
+                topbarCorner.CornerRadius = UDim.new(0, 28)
+                topbarCorner.Parent = topbar
+            else
+                topbarCorner.CornerRadius = UDim.new(0, 28)
+            end
+        end
+
+        local tabBar = mainGui:FindFirstChild("TabBar")
+        if tabBar then
+            tabBar.BackgroundColor3 = Color3.fromRGB(11, 11, 14)
+            tabBar.BackgroundTransparency = 0.02
+            local tbGrad = tabBar:FindFirstChildWhichIsA("UIGradient")
+            if tbGrad then tbGrad:Destroy() end
+            local tbStroke = tabBar:FindFirstChildWhichIsA("UIStroke")
+            if tbStroke then
+                tbStroke.Color = Color3.fromRGB(54, 54, 64)
+                tbStroke.Transparency = 0.35
+            end
+        end
+
+        local contentSurface = mainGui:FindFirstChild("LiquidContentSurface") or mainGui:FindFirstChild("ContentSurface")
+        if contentSurface then
+            contentSurface.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
+            contentSurface.BackgroundTransparency = 0.02
+            local csGrad = contentSurface:FindFirstChildWhichIsA("UIGradient")
+            if csGrad then csGrad:Destroy() end
+            local csStroke = contentSurface:FindFirstChildWhichIsA("UIStroke")
+            if csStroke then
+                csStroke.Color = Color3.fromRGB(54, 54, 64)
+                csStroke.Transparency = 0.35
+            end
+
+            -- Logo Kuzan Hub cỡ lớn lặn chìm ở dưới các chữ & danh sách mục/script
+            local oldWm = contentSurface:FindFirstChild("KuzanWatermarkLogo")
+            if oldWm then oldWm:Destroy() end
+
+            local wmLogo = Instance.new("ImageLabel")
+            wmLogo.Name = "KuzanWatermarkLogo"
+            wmLogo.AnchorPoint = Vector2.new(0.5, 0.5)
+            wmLogo.Position = UDim2.fromScale(0.5, 0.52)
+            wmLogo.Size = UDim2.fromScale(0.80, 0.86)
+            wmLogo.BackgroundTransparency = 1
+            wmLogo.BorderSizePixel = 0
+            wmLogo.Image = ASSETS.KuzanWatermark or ASSETS.KuzanToggle
+            wmLogo.ImageTransparency = 0.72
+            wmLogo.ScaleType = Enum.ScaleType.Fit
+            wmLogo.Active = false
+            wmLogo.Selectable = false
+            wmLogo.ZIndex = (contentSurface.ZIndex or 1) + 1
+            wmLogo.Parent = contentSurface
+
+            local wmAspect = Instance.new("UIAspectRatioConstraint")
+            wmAspect.AspectRatio = 1
+            wmAspect.AspectType = Enum.AspectType.FitWithinMaxSize
+            wmAspect.DominantAxis = Enum.DominantAxis.Height
+            wmAspect.Parent = wmLogo
+
+            local wmCorner = Instance.new("UICorner")
+            wmCorner.CornerRadius = UDim.new(1, 0)
+            wmCorner.Parent = wmLogo
+        end
+
+        local toolbar = topbar and topbar:FindFirstChild("LiquidToolbar")
+        if toolbar then
+            toolbar.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+            toolbar.BackgroundTransparency = 0.02
+            local tGrad = toolbar:FindFirstChildWhichIsA("UIGradient")
+            if tGrad then tGrad:Destroy() end
+            local tStroke = toolbar:FindFirstChildWhichIsA("UIStroke")
+            if tStroke then
+                tStroke.Color = Color3.fromRGB(62, 62, 72)
+                tStroke.Transparency = 0.3
+            end
+
+            local topLogo = toolbar:FindFirstChild("SkidHubTopLogo")
+            if topLogo then
+                topLogo.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+                local lgStroke = topLogo:FindFirstChildWhichIsA("UIStroke")
+                if lgStroke then
+                    lgStroke.Color = Color3.fromRGB(95, 95, 110)
+                end
+            end
+
+            -- Bo tròn thanh Toolbar ở trên thành dạng viên thuốc mượt mà (pill shape)
+            local tbCorner = toolbar:FindFirstChildWhichIsA("UICorner")
+            if tbCorner then
+                tbCorner.CornerRadius = UDim.new(0, 25)
+            else
+                local c = Instance.new("UICorner")
+                c.CornerRadius = UDim.new(0, 25)
+                c.Parent = toolbar
+            end
+
+            local title = toolbar:FindFirstChild("Title")
+            if title then
+                title.Text = "Kuzan Hub v1.1"
+                title.TextColor3 = Color3.fromRGB(255, 255, 255)
+                title.Font = Enum.Font.GothamBold
+                title.Size = UDim2.new(0, 195, 0, 20)
+            end
+            local subtitle = toolbar:FindFirstChild("Subtitle")
+            if subtitle then
+                subtitle.Text = "Kuzan Hub v1.1 | Get Script All Game"
+                subtitle.TextColor3 = Color3.fromRGB(175, 175, 185)
+                subtitle.Font = Enum.Font.GothamMedium
+                subtitle.Size = UDim2.new(0, 205, 0, 16)
+            end
+
+            -- Ô nhỏ Server Discord gọn gàng ở khoảng trống bên cạnh tên Hub (bo tròn dạng pill, màu đen đồng bộ)
+            local oldDiscord = toolbar:FindFirstChild("DiscordServerButton")
+            if oldDiscord then oldDiscord:Destroy() end
+
+            local discordBtn = Instance.new("TextButton")
+            discordBtn.Name = "DiscordServerButton"
+            discordBtn.Size = UDim2.fromOffset(126, 28)
+            discordBtn.AnchorPoint = Vector2.new(0, 0.5)
+            discordBtn.Position = UDim2.new(0, 232, 0.5, 0)
+            discordBtn.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+            discordBtn.BackgroundTransparency = 0.05
+            discordBtn.BorderSizePixel = 0
+            discordBtn.AutoButtonColor = false
+            discordBtn.Text = "💬 Server Discord"
+            discordBtn.TextColor3 = Color3.fromRGB(240, 240, 245)
+            discordBtn.Font = Enum.Font.GothamBold
+            discordBtn.TextSize = 11
+            discordBtn.ZIndex = (toolbar.ZIndex or 1) + 5
+            discordBtn.Parent = toolbar
+
+            -- Bo tròn nút Discord cực mượt (Pill shape)
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(1, 0)
+            corner.Parent = discordBtn
+
+            local stroke = Instance.new("UIStroke")
+            stroke.Thickness = 1
+            stroke.Color = Color3.fromRGB(78, 78, 92)
+            stroke.Transparency = 0.3
+            stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            stroke.Parent = discordBtn
+
+            discordBtn.MouseEnter:Connect(function()
+                TweenService:Create(discordBtn, TweenInfo.new(0.15), {
+                    BackgroundColor3 = Color3.fromRGB(38, 38, 48)
+                }):Play()
+                TweenService:Create(stroke, TweenInfo.new(0.15), {
+                    Transparency = 0.05
+                }):Play()
+            end)
+
+            discordBtn.MouseLeave:Connect(function()
+                TweenService:Create(discordBtn, TweenInfo.new(0.15), {
+                    BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+                }):Play()
+                TweenService:Create(stroke, TweenInfo.new(0.15), {
+                    Transparency = 0.3
+                }):Play()
+            end)
+
+            discordBtn.MouseButton1Click:Connect(function()
+                TweenService:Create(discordBtn, TweenInfo.new(0.08), { Size = UDim2.fromOffset(120, 26) }):Play()
+                task.wait(0.08)
+                TweenService:Create(discordBtn, TweenInfo.new(0.12, Enum.EasingStyle.Back), { Size = UDim2.fromOffset(126, 28) }):Play()
+                copyDiscord(true)
+            end)
+
+            -- Xóa bỏ hoàn toàn phần Copy Hub trên TopBar theo yêu cầu
+            local oldCopyHub = toolbar:FindFirstChild("CopyHubButton")
+            if oldCopyHub then oldCopyHub:Destroy() end
+        end
+    end
+end)
+
+--// 7. HÀM TẠO MỤC THU GỌN / MỞ RỘNG NHỎ GỌN, TINH TẾ (NỔI TRÊN NỀN LOGO CHÌM KUZAN HUB)
+local function createCollapsibleSection(tab, name, defaultOpen)
+    local isOpen = (defaultOpen == true)
+    local registered = {}
+
+    -- Thu gọn khoảng cách giữa các mục trên trang để bố cục gọn gàng hơn
+    pcall(function()
+        if tab and tab._page then
+            local layout = tab._page:FindFirstChildWhichIsA("UIListLayout")
+            if layout then
+                layout.Padding = UDim.new(0, 5)
+            end
+        end
+    end)
+
+    local BG_CLOSED       = Color3.fromRGB(26, 36, 52)
+    local BG_CLOSED_HOVER = Color3.fromRGB(34, 48, 68)
+    local BG_OPEN         = Color3.fromRGB(33, 50, 76)
+    local BG_OPEN_HOVER   = Color3.fromRGB(41, 61, 92)
+
+    local STROKE_CLOSED   = Color3.fromRGB(72, 104, 146)
+    local STROKE_OPEN     = Color3.fromRGB(56, 189, 248)
+
+    local header = Instance.new("TextButton")
+    header.Name = "SecHeader_" .. name
+    header.Size = UDim2.new(1, 0, 0, 28)
+    header.BackgroundColor3 = isOpen and BG_OPEN or BG_CLOSED
+    header.BackgroundTransparency = 0.22
+    header.BorderSizePixel = 0
+    header.AutoButtonColor = false
+    header.Text = ""
+    header.ZIndex = 3
+    header.Parent = tab._page
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 7)
+    corner.Parent = header
+
+    local hGrad = Instance.new("UIGradient")
+    hGrad.Color = ColorSequence.new(
+        Color3.fromRGB(255, 255, 255),
+        Color3.fromRGB(205, 220, 242)
+    )
+    hGrad.Rotation = 0
+    hGrad.Parent = header
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1
+    stroke.Color = isOpen and STROKE_OPEN or STROKE_CLOSED
+    stroke.Transparency = isOpen and 0.12 or 0.32
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = header
+
+    -- Thanh vạch nhấn bên trái (Ice-Cyan Accent Bar) mảnh gọn
+    local accentBar = Instance.new("Frame")
+    accentBar.Name = "AccentBar"
+    accentBar.Size = isOpen and UDim2.fromOffset(3, 15) or UDim2.fromOffset(3, 12)
+    accentBar.AnchorPoint = Vector2.new(0, 0.5)
+    accentBar.Position = UDim2.new(0, 9, 0.5, 0)
+    accentBar.BackgroundColor3 = Color3.fromRGB(56, 189, 248)
+    accentBar.BackgroundTransparency = isOpen and 0 or 0.25
+    accentBar.BorderSizePixel = 0
+    accentBar.ZIndex = 4
+    accentBar.Parent = header
+
+    local barCorner = Instance.new("UICorner")
+    barCorner.CornerRadius = UDim.new(1, 0)
+    barCorner.Parent = accentBar
+
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.Text = name
+    titleLbl.TextColor3 = Color3.fromRGB(242, 248, 255)
+    titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.TextSize = 12
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.Size = UDim2.new(1, -48, 1, 0)
+    titleLbl.Position = UDim2.new(0, 18, 0, 0)
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.ZIndex = 4
+    titleLbl.Parent = header
+
+    local arrowBadge = Instance.new("Frame")
+    arrowBadge.Name = "ArrowBadge"
+    arrowBadge.Size = UDim2.fromOffset(18, 16)
+    arrowBadge.AnchorPoint = Vector2.new(1, 0.5)
+    arrowBadge.Position = UDim2.new(1, -8, 0.5, 0)
+    arrowBadge.BackgroundColor3 = isOpen and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(36, 52, 74)
+    arrowBadge.BackgroundTransparency = isOpen and 0.72 or 0.22
+    arrowBadge.BorderSizePixel = 0
+    arrowBadge.ZIndex = 4
+    arrowBadge.Parent = header
+
+    local badgeCorner = Instance.new("UICorner")
+    badgeCorner.CornerRadius = UDim.new(0, 4)
+    badgeCorner.Parent = arrowBadge
+
+    local arrowLbl = Instance.new("TextLabel")
+    arrowLbl.Text = isOpen and "▼" or "▶"
+    arrowLbl.TextColor3 = isOpen and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(147, 197, 253)
+    arrowLbl.Font = Enum.Font.GothamBold
+    arrowLbl.TextSize = 9
+    arrowLbl.Size = UDim2.fromScale(1, 1)
+    arrowLbl.BackgroundTransparency = 1
+    arrowLbl.ZIndex = 5
+    arrowLbl.Parent = arrowBadge
+
+    local isHovered = false
+    header.MouseEnter:Connect(function()
+        isHovered = true
+        TweenService:Create(header, TweenInfo.new(0.18), {
+            BackgroundColor3 = isOpen and BG_OPEN_HOVER or BG_CLOSED_HOVER
+        }):Play()
+    end)
+    header.MouseLeave:Connect(function()
+        isHovered = false
+        TweenService:Create(header, TweenInfo.new(0.18), {
+            BackgroundColor3 = isOpen and BG_OPEN or BG_CLOSED
+        }):Play()
+    end)
+
+    local function updateState()
+        arrowLbl.Text = isOpen and "▼" or "▶"
+        arrowLbl.TextColor3 = isOpen and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(147, 197, 253)
+        TweenService:Create(header, TweenInfo.new(0.2), {
+            BackgroundColor3 = isOpen and (isHovered and BG_OPEN_HOVER or BG_OPEN) or (isHovered and BG_CLOSED_HOVER or BG_CLOSED)
+        }):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {
+            Color = isOpen and STROKE_OPEN or STROKE_CLOSED,
+            Transparency = isOpen and 0.12 or 0.32
+        }):Play()
+        TweenService:Create(accentBar, TweenInfo.new(0.2), {
+            BackgroundTransparency = isOpen and 0 or 0.25,
+            Size = isOpen and UDim2.fromOffset(3, 15) or UDim2.fromOffset(3, 12)
+        }):Play()
+        TweenService:Create(arrowBadge, TweenInfo.new(0.2), {
+            BackgroundColor3 = isOpen and Color3.fromRGB(56, 189, 248) or Color3.fromRGB(36, 52, 74),
+            BackgroundTransparency = isOpen and 0.72 or 0.22
+        }):Play()
+        for _, c in ipairs(registered) do c.Visible = isOpen end
+    end
+
+    header.MouseButton1Click:Connect(function()
+        isOpen = not isOpen
+        updateState()
+    end)
+
+    -- Hàm chuẩn tạo dòng Script: Tắt ấn vào chữ/thẻ, luôn có 2 ô [📋 Copy] và [▶ Chạy] cạnh nhau
+    local function renderScriptCard(targetTab, item, defaultVisible, regList)
+        local scriptName = item.Name or item.Text or "Script"
+        local scriptCode = item.Code or ""
+
+        -- Khởi tạo thẻ qua AddButton (không truyền Callback) để vẫn hỗ trợ thanh Tìm kiếm (Search)
+        local btn = targetTab:AddButton({
+            Text = scriptName
+        })
+
+        if btn and btn.Instance then
+            local card = btn.Instance
+            card.Active = false
+            card.Visible = (defaultVisible ~= false)
+            if regList then
+                table.insert(regList, card)
+            end
+
+            -- Gỡ bỏ hoàn toàn lớp nút bấm phủ toàn thẻ (click chữ không chạy) & icon mũi tên '>' mặc định
+            pcall(function()
+                for _, child in ipairs(card:GetChildren()) do
+                    if child:IsA("TextButton") then
+                        child:Destroy()
+                    elseif child:IsA("ImageLabel") and child.Name ~= "LeadingIcon" then
+                        child:Destroy()
+                    elseif child:IsA("UIGradient") then
+                        child:Destroy()
+                    end
+                end
+
+                -- Nền thẻ kính khói Đen mờ (để lộ nhẹ Logo Kuzan Hub chìm ở dưới các chữ) & thu gọn chiều cao
+                card.Size = UDim2.new(1, 0, 0, 38)
+                card.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+                card.BackgroundTransparency = 0.42
+                local cCorner = card:FindFirstChildWhichIsA("UICorner")
+                if cCorner then
+                    cCorner.CornerRadius = UDim.new(0, 9)
+                end
+                local stroke = card:FindFirstChildWhichIsA("UIStroke")
+                if stroke then
+                    stroke.Color = Color3.fromRGB(58, 58, 70)
+                    stroke.Transparency = 0.35
+                end
+
+                local titleLbl = card:FindFirstChild("Title", true)
+                if titleLbl and titleLbl:IsA("TextLabel") then
+                    titleLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    titleLbl.Font = Enum.Font.GothamBold
+                    titleLbl.TextSize = 12
+                    titleLbl.TextTruncate = Enum.TextTruncate.AtEnd
+                    titleLbl.AnchorPoint = Vector2.new(0, 0.5)
+                    titleLbl.Position = UDim2.new(0, 14, 0.5, 0)
+                    titleLbl.Size = UDim2.new(1, -166, 0, 20)
+                end
+            end)
+
+            local btnZIndex = (card.ZIndex or 2) + 5
+
+            -- 1. Ô Sao Chép Script (📋 Copy) nằm bên trái ô Chạy
+            pcall(function()
+                local copyBtn = Instance.new("TextButton")
+                copyBtn.Name = "CopyScriptBtn"
+                copyBtn.Size = UDim2.fromOffset(64, 24)
+                copyBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+                copyBtn.Position = UDim2.new(1, -112, 0.5, 0)
+                copyBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
+                copyBtn.BackgroundTransparency = 0.14
+                copyBtn.BorderSizePixel = 0
+                copyBtn.AutoButtonColor = false
+                copyBtn.Text = "📋 Copy"
+                copyBtn.TextColor3 = Color3.fromRGB(225, 225, 235)
+                copyBtn.Font = Enum.Font.GothamBold
+                copyBtn.TextSize = 11
+                copyBtn.ZIndex = btnZIndex
+                copyBtn.Parent = card
+
+                local cpCorner = Instance.new("UICorner")
+                cpCorner.CornerRadius = UDim.new(0, 6)
+                cpCorner.Parent = copyBtn
+
+                local cpStroke = Instance.new("UIStroke")
+                cpStroke.Thickness = 1
+                cpStroke.Color = Color3.fromRGB(76, 76, 90)
+                cpStroke.Transparency = 0.3
+                cpStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                cpStroke.Parent = copyBtn
+
+                copyBtn.MouseEnter:Connect(function()
+                    TweenService:Create(copyBtn, TweenInfo.new(0.15), {
+                        BackgroundColor3 = Color3.fromRGB(40, 40, 50),
+                        TextColor3 = Color3.fromRGB(255, 255, 255)
+                    }):Play()
+                    TweenService:Create(cpStroke, TweenInfo.new(0.15), {
+                        Transparency = 0.05
+                    }):Play()
+                end)
+
+                copyBtn.MouseLeave:Connect(function()
+                    TweenService:Create(copyBtn, TweenInfo.new(0.15), {
+                        BackgroundColor3 = Color3.fromRGB(24, 24, 30),
+                        TextColor3 = Color3.fromRGB(225, 225, 235)
+                    }):Play()
+                    TweenService:Create(cpStroke, TweenInfo.new(0.15), {
+                        Transparency = 0.3
+                    }):Play()
+                end)
+
+                copyBtn.MouseButton1Click:Connect(function()
+                    TweenService:Create(copyBtn, TweenInfo.new(0.08), { Size = UDim2.fromOffset(60, 22) }):Play()
+                    task.wait(0.08)
+                    TweenService:Create(copyBtn, TweenInfo.new(0.12, Enum.EasingStyle.Back), { Size = UDim2.fromOffset(64, 24) }):Play()
+
+                    local copyFn = setclipboard or toclipboard or (Clipboard and Clipboard.set)
+                    if copyFn then
+                        pcall(function() copyFn(scriptCode) end)
+                        copyBtn.Text = "✓ Đã chép"
+                        copyBtn.TextColor3 = Color3.fromRGB(134, 239, 172)
+                        notify("Sao chép", "Đã sao chép mã script: " .. scriptName, 2.5)
+                        task.delay(1.2, function()
+                            if copyBtn and copyBtn.Parent then
+                                copyBtn.Text = "📋 Copy"
+                                copyBtn.TextColor3 = Color3.fromRGB(225, 225, 235)
+                            end
+                        end)
+                    else
+                        notify("Lỗi", "Executor không hỗ trợ sao chép clipboard!", 2.5)
+                    end
+                end)
+            end)
+
+            -- 2. Ô Chạy Script (▶ Chạy) nằm ngay bên cạnh ô Sao Chép
+            pcall(function()
+                local runBtn = Instance.new("TextButton")
+                runBtn.Name = "RunScriptBtn"
+                runBtn.Size = UDim2.fromOffset(64, 24)
+                runBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+                runBtn.Position = UDim2.new(1, -42, 0.5, 0)
+                runBtn.BackgroundColor3 = Color3.fromRGB(28, 46, 72)
+                runBtn.BackgroundTransparency = 0.12
+                runBtn.BorderSizePixel = 0
+                runBtn.AutoButtonColor = false
+                runBtn.Text = "▶ Chạy"
+                runBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                runBtn.Font = Enum.Font.GothamBold
+                runBtn.TextSize = 11
+                runBtn.ZIndex = btnZIndex
+                runBtn.Parent = card
+
+                local rnCorner = Instance.new("UICorner")
+                rnCorner.CornerRadius = UDim.new(0, 6)
+                rnCorner.Parent = runBtn
+
+                local rnStroke = Instance.new("UIStroke")
+                rnStroke.Thickness = 1
+                rnStroke.Color = Color3.fromRGB(96, 165, 250)
+                rnStroke.Transparency = 0.22
+                rnStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                rnStroke.Parent = runBtn
+
+                runBtn.MouseEnter:Connect(function()
+                    TweenService:Create(runBtn, TweenInfo.new(0.15), {
+                        BackgroundColor3 = Color3.fromRGB(38, 66, 104)
+                    }):Play()
+                    TweenService:Create(rnStroke, TweenInfo.new(0.15), {
+                        Transparency = 0.02
+                    }):Play()
+                end)
+
+                runBtn.MouseLeave:Connect(function()
+                    TweenService:Create(runBtn, TweenInfo.new(0.15), {
+                        BackgroundColor3 = Color3.fromRGB(28, 46, 72)
+                    }):Play()
+                    TweenService:Create(rnStroke, TweenInfo.new(0.15), {
+                        Transparency = 0.22
+                    }):Play()
+                end)
+
+                runBtn.MouseButton1Click:Connect(function()
+                    TweenService:Create(runBtn, TweenInfo.new(0.08), { Size = UDim2.fromOffset(60, 22) }):Play()
+                    task.wait(0.08)
+                    TweenService:Create(runBtn, TweenInfo.new(0.12, Enum.EasingStyle.Back), { Size = UDim2.fromOffset(64, 24) }):Play()
+
+                    runBtn.Text = "✓ Đã bật"
+                    runBtn.TextColor3 = Color3.fromRGB(134, 239, 172)
+                    task.delay(1.2, function()
+                        if runBtn and runBtn.Parent then
+                            runBtn.Text = "▶ Chạy"
+                            runBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                        end
+                    end)
+
+                    executeScript(scriptCode, scriptName)
+                end)
+            end)
+        end
+
+        return btn
+    end
+
+    local secObj = {}
+    function secObj:AddButton(btnOpts)
+        if type(btnOpts) == "table" and btnOpts.Code then
+            return renderScriptCard(tab, btnOpts, isOpen, registered)
+        end
+        local btn = tab:AddButton(btnOpts)
+        if btn and btn.Instance then
+            btn.Instance.Visible = isOpen
+            table.insert(registered, btn.Instance)
+            pcall(function()
+                local cGrad = btn.Instance:FindFirstChildWhichIsA("UIGradient")
+                if cGrad then cGrad:Destroy() end
+                btn.Instance.Size = UDim2.new(1, 0, 0, 38)
+                btn.Instance.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+                btn.Instance.BackgroundTransparency = 0.42
+                local bStroke = btn.Instance:FindFirstChildWhichIsA("UIStroke")
+                if bStroke then
+                    bStroke.Color = Color3.fromRGB(58, 58, 70)
+                    bStroke.Transparency = 0.35
+                end
+                local bTitle = btn.Instance:FindFirstChild("Title", true)
+                if bTitle and bTitle:IsA("TextLabel") then
+                    bTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    bTitle.Font = Enum.Font.GothamBold
+                    bTitle.TextSize = 12
+                end
+            end)
+        end
+        return btn
+    end
+
+    function secObj:AddScriptButton(item)
+        return renderScriptCard(tab, item, isOpen, registered)
+    end
+
+    function secObj:AddLabel(text)
+        local lbl = tab:AddLabel(text)
+        if lbl and lbl.Instance then
+            lbl.Instance.Visible = isOpen
+            table.insert(registered, lbl.Instance)
+            pcall(function()
+                local labelText = lbl.Instance:FindFirstChildWhichIsA("TextLabel", true)
+                if labelText then
+                    labelText.TextColor3 = Color3.fromRGB(185, 185, 195)
+                end
+            end)
+        end
+        return lbl
+    end
+
+    return secObj
+end
+
+--// 8. HÀM XÂY DỰNG CÁC TAB GAME THEO YÊU CẦU (MỌI SCRIPT MỚI THÊM ĐỀU TỰ ĐỘNG CÓ 2 Ô COPY & CHẠY)
+local function buildGameTab(tabName, iconAsset, isCustom, gameData)
+    local tab = rawWin:AddTab({ Name = tabName, Icon = iconAsset })
+    tab._isCustomIcon = (isCustom == true)
+    gameData = gameData or {}
+
+    local defaultSections = {
+        { Key = "Script Main", EmptyText = "Hiện chưa có script Main cho mục này." },
+        { Key = "Script Auto", EmptyText = "Hiện chưa có script Auto (Sắp cập nhật)." },
+        { Key = "Script Kaitun", EmptyText = "Hiện chưa có script Kaitun (Sắp cập nhật)." }
+    }
+
+    local handledKeys = {}
+    for _, secInfo in ipairs(defaultSections) do
+        handledKeys[secInfo.Key] = true
+        local sec = createCollapsibleSection(tab, secInfo.Key, false)
+        local list = gameData[secInfo.Key]
+        if list and #list > 0 then
+            for _, item in ipairs(list) do
+                sec:AddScriptButton(item)
+            end
+        else
+            sec:AddLabel(secInfo.EmptyText)
+        end
+    end
+
+    -- Tự động hỗ trợ bất kỳ mục (Section) mới nào được thêm vào Database sau này
+    for secKey, list in pairs(gameData) do
+        if not handledKeys[secKey] and type(list) == "table" then
+            local extraSec = createCollapsibleSection(tab, tostring(secKey), false)
+            if #list > 0 then
+                for _, item in ipairs(list) do
+                    extraSec:AddScriptButton(item)
+                end
+            else
+                extraSec:AddLabel("Hiện chưa có script cho mục này.")
+            end
+        end
+    end
+
+    return tab
+end
+
+-- Khởi tạo các Tab Game với Logo chuẩn xác
+buildGameTab("Blox Fruits", ASSETS.BloxFruits, true, Database["Blox Fruits"])
+buildGameTab("Steal An Egg", ASSETS.StealAnEgg, true, Database["Steal An Egg"])
+buildGameTab("Ride A Pet", ASSETS.RideAPet, true, Database["Ride A Pet"])
+buildGameTab("Fishing Master", ASSETS.FishingMaster, true, Database["Fishing Master"])
+buildGameTab("99 Night in Forest", ASSETS.NightInForest, true, Database["99 Night in The Forest"])
+
+--// =========================================================================
+--// HỆ THỐNG TIỆN ÍCH MISC: ANTI-AFK & FPS BOOST
+--// =========================================================================
+
+-- 1. Anti-AFK (Chống Kick Khi Treo Máy Quá 20 Phút)
+local antiAfkEnabled = false
+local antiAfkConn = nil
+local antiAfkThread = nil
+
+local function setAntiAfk(state)
+    antiAfkEnabled = state
+    if antiAfkEnabled then
+        local vu = nil
+        pcall(function()
+            vu = cloneref and cloneref(game:GetService("VirtualUser")) or game:GetService("VirtualUser")
+        end)
+        if not antiAfkConn then
+            antiAfkConn = LocalPlayer.Idled:Connect(function()
+                if antiAfkEnabled and vu then
+                    pcall(function()
+                        vu:CaptureController()
+                        vu:ClickButton2(Vector2.new(0, 0))
+                    end)
+                end
+            end)
+        end
+        if not antiAfkThread then
+            antiAfkThread = task.spawn(function()
+                while antiAfkEnabled do
+                    task.wait(600)
+                    if antiAfkEnabled and vu then
+                        pcall(function()
+                            vu:CaptureController()
+                            vu:ClickButton2(Vector2.new(0, 0))
+                        end)
+                    end
+                end
+                antiAfkThread = nil
+            end)
+        end
+        notify("Anti-AFK", "Anti-AFK: ĐÃ BẬT! Bạn sẽ không bị kick khi treo máy.", 3)
+    else
+        if antiAfkConn then
+            antiAfkConn:Disconnect()
+            antiAfkConn = nil
+        end
+        antiAfkThread = nil
+        notify("Anti-AFK", "Anti-AFK: ĐÃ TẮT.", 3)
+    end
+end
+
+-- 2. FPS Boost (Tối Ưu Hóa Đồ Họa & Giảm Lag)
+local fpsBoostEnabled = false
+local fpsDescendantConn = nil
+
+local function optimizeInstance(inst)
+    pcall(function()
+        if inst:IsA("BasePart") then
+            inst.Material = Enum.Material.SmoothPlastic
+            inst.Reflectance = 0
+            inst.CastShadow = false
+        elseif inst:IsA("Decal") or inst:IsA("Texture") then
+            inst.Transparency = 0.5
+        elseif inst:IsA("ParticleEmitter") or inst:IsA("Trail") then
+            inst.Lifetime = NumberRange.new(0)
+            inst.Enabled = false
+        elseif inst:IsA("Fire") or inst:IsA("Smoke") or inst:IsA("Sparkles") then
+            inst.Enabled = false
+        elseif inst:IsA("Explosion") then
+            inst.BlastPressure = 1
+            inst.BlastRadius = 1
+        elseif inst:IsA("Highlight") then
+            inst.Enabled = false
+        end
+    end)
+end
+
+local function applyFPSBoost()
+    pcall(function()
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+    end)
+
+    pcall(function()
+        local lighting = game:GetService("Lighting")
+        lighting.GlobalShadows = false
+        lighting.FogEnd = 9e9
+        lighting.Brightness = 1
+        lighting.ShadowSoftness = 0
+        for _, v in ipairs(lighting:GetChildren()) do
+            if v:IsA("PostProcessEffect")
+            or v:IsA("BloomEffect")
+            or v:IsA("BlurEffect")
+            or v:IsA("DepthOfFieldEffect")
+            or v:IsA("SunRaysEffect")
+            or v:IsA("ColorCorrectionEffect") then
+                v.Enabled = false
+            end
+        end
+    end)
+
+    pcall(function()
+        local terrain = workspace:FindFirstChildOfClass("Terrain")
+        if terrain then
+            terrain.WaterWaveSize = 0
+            terrain.WaterWaveSpeed = 0
+            terrain.WaterReflectance = 0
+            terrain.WaterTransparency = 0
+            if sethiddenproperty then
+                sethiddenproperty(terrain, "Decoration", false)
+            end
+        end
+    end)
+
+    for _, v in ipairs(workspace:GetDescendants()) do
+        optimizeInstance(v)
+    end
+end
+
+local function setFPSBoost(state)
+    fpsBoostEnabled = state
+    if fpsBoostEnabled then
+        applyFPSBoost()
+        if not fpsDescendantConn then
+            fpsDescendantConn = workspace.DescendantAdded:Connect(function(child)
+                if fpsBoostEnabled then
+                    optimizeInstance(child)
+                end
+            end)
+        end
+        notify("FPS Boost", "Đã bật FPS Boost! Đồ họa đã được tối ưu mượt mà.", 3)
+    else
+        if fpsDescendantConn then
+            fpsDescendantConn:Disconnect()
+            fpsDescendantConn = nil
+        end
+        notify("FPS Boost", "Đã tắt theo dõi tối ưu FPS mới.", 3)
+    end
+end
+
+-- 3. Server Hop (Đổi Server Ngẫu Nhiên)
+local function serverHop()
+    notify("Server Hop", "Đang tìm server khác...", 2.5)
+    task.spawn(function()
+        local placeId = game.PlaceId
+        local success, servers = pcall(function()
+            local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Asc&limit=100"
+            return game:HttpGet(url)
+        end)
+        if success and servers then
+            local decodeOk, parsed = pcall(function()
+                return HttpService:JSONDecode(servers)
+            end)
+            if decodeOk and parsed and parsed.data then
+                for _, s in ipairs(parsed.data) do
+                    if s.id ~= game.JobId and (tonumber(s.playing) or 0) < (tonumber(s.maxPlayers) or 0) then
+                        TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
+                        return
+                    end
+                end
+            end
+        end
+        TeleportService:Teleport(placeId, LocalPlayer)
+    end)
+end
+
+--// =========================================================================
+--// KHỞI TẠO TAB MISC & SETTINGS
+--// =========================================================================
+
+-- Tab 6: Tiện Ích (Misc)
+local MiscTab = rawWin:AddTab({ Name = "Misc", Icon = "wrench" })
+
+MiscTab:AddSection("Tối Ưu & Treo Máy")
+
+MiscTab:AddToggle({
+    Text = "Tự động ẩn Menu khi chạy script",
+    Description = "Đóng Kuzan Hub v1.1 khi bật script để tránh xung đột UI và giảm văng game",
+    Default = true,
+    Callback = function(state)
+        autoCloseUI = state
+    end
+})
+
+MiscTab:AddToggle({
+    Text = "Anti-AFK (Chống Kick Treo Máy)",
+    Description = "Chống bị văng game sau 20 phút không thao tác",
+    Default = false,
+    Callback = function(state)
+        setAntiAfk(state)
+    end
+})
+
+MiscTab:AddToggle({
+    Text = "FPS Boost (Giảm Lag Đồ Họa)",
+    Description = "Tối ưu hóa toàn bộ hiệu ứng, ánh sáng và vật thể",
+    Default = false,
+    Callback = function(state)
+        setFPSBoost(state)
+    end
+})
+
+MiscTab:AddButton({
+    Text = "⚡ Tối Ưu Hóa FPS Ngay Lập Tức",
+    Description = "Làm mượt và giảm tải đồ họa ngay bây giờ",
+    Callback = function()
+        applyFPSBoost()
+        notify("FPS Boost", "Đã tối ưu hóa toàn bộ đồ họa hiện tại!", 3)
+    end
+})
+
+MiscTab:AddButton({
+    Text = "🔓 Mở Khóa FPS (Unlock 240 FPS)",
+    Description = "Nâng giới hạn khung hình lên 240 FPS",
+    Callback = function()
+        if setfpscap then
+            setfpscap(240)
+            notify("FPS Unlocker", "Đã mở khóa giới hạn 240 FPS!", 3)
+        else
+            notify("FPS Unlocker", "Executor của bạn không hỗ trợ setfpscap!", 3)
+        end
+    end
+})
+
+MiscTab:AddSection("Server & Chuyển Server")
+
+MiscTab:AddButton({
+    Text = "🔄 Vào Lại Server Hiện Tại (Rejoin)",
+    Callback = function()
+        notify("Rejoin", "Đang kết nối lại server...", 2.5)
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end
+})
+
+MiscTab:AddButton({
+    Text = "🌐 Đổi Server Khác (Server Hop)",
+    Callback = function()
+        serverHop()
+    end
+})
+
+MiscTab:AddSection("Kuzan Hub v1.1 & Cộng Đồng")
+
+MiscTab:AddButton({
+    Text = "💬 Sao Chép Link Discord",
+    Description = "Tham gia cộng đồng Discord Kuzan Hub v1.1",
+    Callback = function()
+        copyDiscord(true)
+    end
+})
+
+-- Đồng bộ màu kính khói Đen mờ cho toàn bộ thẻ trong Tab Misc (lộ nhẹ Logo chìm Kuzan Hub ở dưới)
+pcall(function()
+    if MiscTab and MiscTab._page then
+        local mLayout = MiscTab._page:FindFirstChildWhichIsA("UIListLayout")
+        if mLayout then
+            mLayout.Padding = UDim.new(0, 6)
+        end
+        for _, item in ipairs(MiscTab._page:GetChildren()) do
+            if item:IsA("Frame") and item.BackgroundTransparency < 0.95 then
+                local g = item:FindFirstChildWhichIsA("UIGradient")
+                if g then g:Destroy() end
+                item.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+                item.BackgroundTransparency = 0.42
+                local st = item:FindFirstChildWhichIsA("UIStroke")
+                if st then
+                    st.Color = Color3.fromRGB(58, 58, 70)
+                    st.Transparency = 0.35
+                end
+            end
+        end
+    end
+end)
+
+--// 9. TỐI ƯU HOÁ LOGO TRÊN THANH TAB (HIỂN THỊ ĐẦY ĐỦ MÀU SẮC NGUYÊN BẢN)
+local function fixIcons()
+    for _, t in pairs(rawWin._tabs) do
+        if t._icon and t._isCustomIcon then
+            t._icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+            t._icon.ImageTransparency = 0
+            if not t._icon:FindFirstChildWhichIsA("UICorner") then
+                local c = Instance.new("UICorner")
+                c.CornerRadius = UDim.new(0, 4)
+                c.Parent = t._icon
+            end
+        end
+    end
+end
+fixIcons()
+rawWin._tabChangeListeners = rawWin._tabChangeListeners or {}
+table.insert(rawWin._tabChangeListeners, function()
+    task.defer(fixIcons)
+end)
+
+--// 10. PHÍM TẮT BỔ SUNG CHO PC
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if not gpe then
+        if input.KeyCode == Enum.KeyCode.RightControl
+        or input.KeyCode == Enum.KeyCode.LeftControl
+        or input.KeyCode == Enum.KeyCode.Insert then
+            if rawWin and rawWin.Toggle then
+                rawWin:Toggle()
+            elseif mainGui then
+                mainGui.Visible = not mainGui.Visible
+            end
+        end
+    end
+end)
+
+-- Chọn tab đầu tiên Blox Fruits mặc định
+pcall(function()
+    if rawWin._tabs and rawWin._tabs[1] and rawWin._tabs[1]._select then
+        rawWin._tabs[1]:_select()
+    end
+end)
+
+-- Thông báo khởi chạy thành công
+notify("Kuzan Hub v1.1", "Kuzan Hub v1.1 đã bật! (Đã tự động sao chép link Discord)", 4.5)
